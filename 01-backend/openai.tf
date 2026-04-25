@@ -33,7 +33,8 @@ resource "azurerm_cognitive_deployment" "gpt_image_1" {
   }
 
   sku {
-    name     = "GlobalStandard"
+    # Standard quota pool — GlobalStandard requires subscription allowlisting
+    name     = "Standard"
     capacity = 1
   }
 }
