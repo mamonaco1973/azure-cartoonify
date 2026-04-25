@@ -83,7 +83,9 @@
       return;
     }
 
-    sessionStorage.setItem("access_token",  tokens.access_token);
+    // id_token has aud=clientId and is signed by the CIAM JWKS.
+    // access_token is a v1.0 Graph token (aud=00000003-...) and fails our validator.
+    sessionStorage.setItem("access_token",  tokens.id_token);
     sessionStorage.setItem("id_token",      tokens.id_token      || "");
     sessionStorage.setItem("refresh_token", tokens.refresh_token || "");
 
