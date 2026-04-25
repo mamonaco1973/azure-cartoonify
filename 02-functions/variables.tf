@@ -47,16 +47,11 @@ variable "media_blob_endpoint" {
   type = string
 }
 
-variable "openai_endpoint" {
-  type = string
-}
-
-variable "openai_account_id" {
-  type = string
-}
-
-variable "openai_deployment_name" {
-  type = string
+variable "openai_api_key" {
+  type      = string
+  sensitive = true
+  # Empty by default — set OPENAI_API_KEY and re-run apply.sh to activate
+  default   = ""
 }
 
 variable "entra_tenant_name" {

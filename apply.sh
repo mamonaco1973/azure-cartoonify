@@ -30,9 +30,6 @@ COSMOS_ROLE_DEF_ID=$(terraform output -raw cosmos_role_definition_id)
 SB_NAMESPACE_FQDN=$(terraform output -raw servicebus_namespace_fqdn)
 SB_QUEUE_NAME=$(terraform output -raw servicebus_queue_name)
 SB_QUEUE_ID=$(terraform output -raw servicebus_queue_id)
-OPENAI_ENDPOINT=$(terraform output -raw openai_endpoint)
-OPENAI_ACCOUNT_ID=$(terraform output -raw openai_account_id)
-OPENAI_DEPLOYMENT=$(terraform output -raw openai_deployment_name)
 ENTRA_CLIENT_ID=$(terraform output -raw entra_client_id)
 ENTRA_AUTHORITY=$(terraform output -raw entra_authority)
 
@@ -108,9 +105,8 @@ export TF_VAR_cosmos_role_definition_id="$COSMOS_ROLE_DEF_ID"
 export TF_VAR_media_storage_name="$MEDIA_STORAGE_NAME"
 export TF_VAR_media_storage_key="$MEDIA_STORAGE_KEY"
 export TF_VAR_media_blob_endpoint="$MEDIA_BLOB_ENDPOINT"
-export TF_VAR_openai_endpoint="$OPENAI_ENDPOINT"
-export TF_VAR_openai_account_id="$OPENAI_ACCOUNT_ID"
-export TF_VAR_openai_deployment_name="$OPENAI_DEPLOYMENT"
+# Optional — empty string deploys the app without a key; set and re-run to add it
+export TF_VAR_openai_api_key="${OPENAI_API_KEY:-}"
 export TF_VAR_entra_tenant_name="$ENTRA_TENANT_NAME"
 export TF_VAR_entra_tenant_id="$ENTRA_TENANT_ID"
 export TF_VAR_entra_client_id="$ENTRA_CLIENT_ID"

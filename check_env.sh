@@ -97,3 +97,11 @@ if [[ -z "$FLOW_ID" || "$FLOW_ID" == "null" ]]; then
 fi
 
 echo "NOTE: User flow '${ENTRA_USER_FLOW_NAME}' found (id: ${FLOW_ID})."
+
+# OPENAI_API_KEY is optional — worker raises at runtime if missing
+if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+  echo "WARNING: OPENAI_API_KEY is not set. The cartoonify worker will fail"
+  echo "         until the key is added and apply.sh is re-run."
+else
+  echo "NOTE: OPENAI_API_KEY is set."
+fi

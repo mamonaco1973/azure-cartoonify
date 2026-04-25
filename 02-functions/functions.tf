@@ -86,9 +86,8 @@ resource "azurerm_function_app_flex_consumption" "cartoonify" {
     MEDIA_ACCOUNT_KEY  = var.media_storage_key
     MEDIA_BLOB_ENDPOINT = var.media_blob_endpoint
 
-    # Azure OpenAI — managed identity auth (no key needed)
-    AZURE_OPENAI_ENDPOINT   = var.openai_endpoint
-    AZURE_OPENAI_DEPLOYMENT = var.openai_deployment_name
+    # OpenAI API — key stored as a Function App setting
+    OPENAI_API_KEY = var.openai_api_key
 
     # Entra External ID — JWT validation
     ENTRA_TENANT_NAME = var.entra_tenant_name
@@ -141,15 +140,5 @@ resource "azurerm_cosmosdb_sql_role_assignment" "func_cosmos" {
   scope              = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${data.azurerm_resource_group.cartoonify.name}/providers/Microsoft.DocumentDB/databaseAccounts/${var.cosmos_account_name}"
 }
 
-# ================================================================================
-# RBAC — Azure OpenAI
-# Managed identity needs Cognitive Services OpenAI User to call images.edit
-# ================================================================================
-
-resource "azurerm_role_assignment" "openai_user" {
-  scope                = var.openai_account_id
-  role_definition_name = "Cognitive Services OpenAI User"
-  principal_id         = azurerm_function_app_flex_consumption.cartoonify.identity[0].principal_id
-}
 
 data "azurerm_client_config" "current" {}

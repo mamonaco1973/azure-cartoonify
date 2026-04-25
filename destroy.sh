@@ -34,9 +34,7 @@ terraform destroy -auto-approve \
   -var="media_storage_name=placeholder" \
   -var="media_storage_key=placeholder" \
   -var="media_blob_endpoint=placeholder" \
-  -var="openai_endpoint=placeholder" \
-  -var="openai_account_id=placeholder" \
-  -var="openai_deployment_name=placeholder" \
+  -var="openai_api_key=placeholder" \
   -var="entra_tenant_name=placeholder" \
   -var="entra_tenant_id=placeholder" \
   -var="entra_client_id=placeholder" \

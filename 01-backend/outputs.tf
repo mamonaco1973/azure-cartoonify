@@ -47,17 +47,6 @@ output "servicebus_queue_id" {
   value = azurerm_servicebus_queue.jobs.id
 }
 
-output "openai_endpoint" {
-  value = azurerm_cognitive_account.openai.endpoint
-}
-
-output "openai_account_id" {
-  value = azurerm_cognitive_account.openai.id
-}
-
-output "openai_deployment_name" {
-  value = azurerm_cognitive_deployment.image_model.name
-}
 
 output "entra_client_id" {
   value = azuread_application.cartoonify.client_id

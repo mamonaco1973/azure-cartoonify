@@ -28,8 +28,12 @@ Browser → DELETE /api/history/{id} → delete blobs + Cosmos row
 ```
 
 **Azure services:** Azure Functions (FC1 Flex Consumption), Service Bus (Standard),
-Cosmos DB (SQL API), Blob Storage (web SPA + media), Azure OpenAI (gpt-image-1),
-Microsoft Entra External ID.
+Cosmos DB (SQL API), Blob Storage (web SPA + media), Microsoft Entra External ID.
+
+**Image generation:** OpenAI API (api.openai.com) — gpt-image-1 images.edit,
+authenticated via OPENAI_API_KEY stored as a Function App setting. Azure OpenAI
+is not used; gpt-image-1 requires subscription allowlisting on Azure which is
+not generally available.
 
 ## Prerequisites
 
@@ -53,6 +57,7 @@ ENTRA_TENANT_NAME
 ENTRA_SP_CLIENT_ID
 ENTRA_SP_CLIENT_SECRET
 ENTRA_USER_FLOW_NAME
+OPENAI_API_KEY
 ```
 
 ## Deploy / Destroy
