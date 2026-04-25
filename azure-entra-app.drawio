@@ -1,0 +1,67 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36">
+  <diagram id="Ht1M8jgEwFfnCIfOTk4-" name="Page-1">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="1169" pageHeight="827" background="none" math="0" shadow="1">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="border" parent="1" style="whiteSpace=wrap;html=1;fillColor=none;rounded=0;labelBackgroundColor=none;fontColor=none;noLabel=1;" value="=" vertex="1">
+          <mxGeometry height="530" width="860" x="200" y="-740" as="geometry" />
+        </mxCell>
+        <mxCell id="azure-label" parent="1" style="image;aspect=fixed;html=1;points=[];align=left;fontSize=17;image=img/lib/azure2/other/Azure_A.svg;labelBackgroundColor=none;labelPosition=right;verticalLabelPosition=middle;verticalAlign=middle;spacing=8;" value="Azure Cloud - US Central Region" vertex="1">
+          <mxGeometry height="30" width="31.82" x="200" y="-770" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=15;image=img/lib/azure2/general/Browser.svg;labelBackgroundColor=none;" value="Browser" vertex="1">
+          <mxGeometry height="50" width="57" x="80" y="-485.8499999999999" as="geometry" />
+        </mxCell>
+        <mxCell id="blob-website" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=15;image=img/lib/azure2/storage/Storage_Accounts.svg;labelBackgroundColor=none;" value="Static Website&lt;div&gt;Blob Storage ($web)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="50.3" width="57" x="330" y="-486.15" as="geometry" />
+        </mxCell>
+        <mxCell id="func-app" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=15;image=img/lib/azure2/compute/Function_Apps.svg;labelBackgroundColor=none;labelPosition=center;verticalLabelPosition=top;verticalAlign=bottom;direction=west;" value="notes-func-*&lt;div&gt;Azure Functions (FC1)&lt;/div&gt;&lt;div&gt;Python 3.11&lt;/div&gt;" vertex="1">
+          <mxGeometry height="50.3" width="57" x="621.5" y="-486.15" as="geometry" />
+        </mxCell>
+        <mxCell id="func-storage" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=15;image=img/lib/azure2/storage/Storage_Accounts.svg;labelBackgroundColor=none;" value="func code&lt;div&gt;storage account&lt;/div&gt;" vertex="1">
+          <mxGeometry height="31.6" width="39.5" x="630.5" y="-316.15" as="geometry" />
+        </mxCell>
+        <mxCell id="cosmos" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=15;image=img/lib/azure2/databases/Azure_Cosmos_DB.svg;labelBackgroundColor=none;" value="notes-cosmos-*&lt;div&gt;Cosmos DB SQL API&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="58" width="58" x="920" y="-490.0000000000001" as="geometry" />
+        </mxCell>
+        <mxCell id="e-browser-web" edge="1" parent="1" source="browser" style="endArrow=classic;startArrow=classic;startFill=1;html=1;rounded=0;dashed=1;labelBackgroundColor=none;spacingTop=-20;" target="blob-website" value="">
+          <mxGeometry relative="1" x="0.0052" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-web-func" edge="1" parent="1" source="blob-website" style="endArrow=classic;startArrow=none;html=1;rounded=0;dashed=1;labelBackgroundColor=none;spacingTop=-20;" target="func-app" value="Bearer JWT">
+          <mxGeometry relative="1" x="-0.0023" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-func-cosmos" edge="1" parent="1" source="func-app" style="endArrow=classic;startArrow=classic;startFill=1;html=1;rounded=0;labelBackgroundColor=none;spacingTop=-20;dashed=1;" target="cosmos" value="CRUD">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-func-storage" edge="1" parent="1" source="func-app" style="endArrow=none;html=1;rounded=0;dashed=1;labelBackgroundColor=none;spacingRight=1;spacingLeft=50;" target="func-storage" value="code zip">
+          <mxGeometry relative="1" x="0.007" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="-FQzp1DPQeCULDHrSHrl-2" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=11;image=img/lib/azure2/other/Entra_Identity.svg;labelBackgroundColor=none;" value="&lt;font style=&quot;font-size: 15px;&quot;&gt;EntraID Tenant&lt;/font&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="51.55" width="58" x="319" y="-687" as="geometry" />
+        </mxCell>
+        <mxCell id="-FQzp1DPQeCULDHrSHrl-3" edge="1" parent="1" source="browser" style="endArrow=classic;html=1;rounded=0;exitX=0.456;exitY=-0.083;exitDx=0;exitDy=0;exitPerimeter=0;entryX=-0.015;entryY=0.43;entryDx=0;entryDy=0;entryPerimeter=0;dashed=1;labelBackgroundColor=none;spacingTop=-18;spacingLeft=22;" target="-FQzp1DPQeCULDHrSHrl-2" value="Authenticate">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <Array as="points">
+              <mxPoint x="106" y="-664" />
+            </Array>
+            <mxPoint x="560" y="-530" as="sourcePoint" />
+            <mxPoint x="109" y="-660" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="-FQzp1DPQeCULDHrSHrl-4" edge="1" parent="1" source="-FQzp1DPQeCULDHrSHrl-2" style="endArrow=classic;html=1;rounded=0;exitX=0.015;exitY=0.778;exitDx=0;exitDy=0;exitPerimeter=0;labelBackgroundColor=none;dashed=1;spacingLeft=-27;spacingTop=-13;" target="browser" value="JWT">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="560" y="-530" as="sourcePoint" />
+            <mxPoint x="610" y="-580" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

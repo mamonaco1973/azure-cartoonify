@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Signing in…</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background: #0f172a;
+      color: #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    p { font-size: 14px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+<p id="msg">Completing sign-in…</p>
+<script>
+(async function () {
+  const msg = document.getElementById("msg");
+
+  // ── Load runtime config ────────────────────────────────────────────────────
+  let cfg;
+  try {
+    cfg = await fetch("config.json").then(r => r.json());
+  } catch (e) {
+    msg.textContent = "Error: could not load config.json — " + e.message;
+    return;
+  }
+
+  // ── Parse callback params ──────────────────────────────────────────────────
+  const params = new URLSearchParams(window.location.search);
+  const code   = params.get("code");
+  const state  = params.get("state");
+  const error  = params.get("error");
+
+  if (error) {
+    msg.textContent = "Sign-in error: " + (params.get("error_description") || error);
+    return;
+  }
+
+  if (!code) {
+    msg.textContent = "Error: no authorization code in callback.";
+    return;
+  }
+
+  // ── Validate state (CSRF guard) ────────────────────────────────────────────
+  const savedState   = sessionStorage.getItem("pkce_state");
+  const codeVerifier = sessionStorage.getItem("pkce_verifier");
+
+  if (!savedState || state !== savedState) {
+    msg.textContent = "Error: state mismatch — possible CSRF attempt.";
+    return;
+  }
+
+  sessionStorage.removeItem("pkce_state");
+  sessionStorage.removeItem("pkce_verifier");
+
+  // ── Exchange authorization code for tokens ─────────────────────────────────
+  const tokenUrl = cfg.authority + "/oauth2/v2.0/token";
+  const body     = new URLSearchParams({
+    grant_type:    "authorization_code",
+    client_id:     cfg.clientId,
+    code:          code,
+    redirect_uri:  cfg.redirectUri,
+    code_verifier: codeVerifier,
+  });
+
+  try {
+    const res    = await fetch(tokenUrl, {
+      method:  "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body:    body.toString(),
+    });
+    const tokens = await res.json();
+
+    if (!res.ok || tokens.error) {
+      msg.textContent = "Token error: " + (tokens.error_description || tokens.error || res.status);
+      return;
+    }
+
+    sessionStorage.setItem("access_token",  tokens.access_token);
+    sessionStorage.setItem("id_token",      tokens.id_token      || "");
+    sessionStorage.setItem("refresh_token", tokens.refresh_token || "");
+
+    // Strip the auth params from the URL then navigate home.
+    window.location.replace("index.html");
+
+  } catch (e) {
+    msg.textContent = "Error exchanging code: " + e.message;
+  }
+})();
+</script>
+</body>
+</html>
