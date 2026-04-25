@@ -160,6 +160,7 @@ def validate_token(req: func.HttpRequest):
         header = jwt.get_unverified_header(token)
         key_data = next((k for k in jwks["keys"] if k["kid"] == header["kid"]), None)
         if key_data is None:
+            logging.warning("validate_token: kid=%s not found in JWKS", header.get("kid"))
             return None
         public_key = RSAAlgorithm.from_jwk(json.dumps(key_data))
         claims = jwt.decode(
@@ -169,7 +170,8 @@ def validate_token(req: func.HttpRequest):
             audience=CLIENT_ID,
         )
         return claims.get("sub") or claims.get("oid")
-    except Exception:
+    except Exception as e:
+        logging.warning("validate_token failed: %s", e)
         return None
 
 
