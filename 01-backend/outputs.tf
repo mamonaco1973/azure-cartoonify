@@ -56,7 +56,7 @@ output "openai_account_id" {
 }
 
 output "openai_deployment_name" {
-  value = azurerm_cognitive_deployment.gpt_image_1.name
+  value = azurerm_cognitive_deployment.image_model.name
 }
 
 output "entra_client_id" {

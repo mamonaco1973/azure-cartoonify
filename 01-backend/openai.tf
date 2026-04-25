@@ -1,7 +1,7 @@
 # ================================================================================
 # Azure OpenAI — image generation backend
-# Replaces AWS Bedrock. The Function App worker calls the gpt-image-1
-# images.edit endpoint, authenticated via managed identity (no API key).
+# DALL-E 2 supports images.edit() with an input image, making it suitable for
+# cartoonification. gpt-image-1 requires subscription allowlisting in Azure.
 # ================================================================================
 
 resource "random_string" "openai_suffix" {
@@ -19,21 +19,18 @@ resource "azurerm_cognitive_account" "openai" {
   custom_subdomain_name = "cartoonify-openai-${random_string.openai_suffix.result}"
 }
 
-# gpt-image-1 supports image editing (images.edit) — input image + text prompt
-# → cartoonified output. This is the Azure-native replacement for
-# Bedrock stable-image-control-structure.
-resource "azurerm_cognitive_deployment" "gpt_image_1" {
-  name                 = "gpt-image-1"
+# DALL-E 2 uses images.edit() — input image + prompt → cartoonified output.
+# Standard SKU is available without subscription allowlisting.
+resource "azurerm_cognitive_deployment" "image_model" {
+  name                 = "dall-e-2"
   cognitive_account_id = azurerm_cognitive_account.openai.id
 
   model {
-    format  = "OpenAI"
-    name    = "gpt-image-1"
-    version = "2025-04-15"
+    format = "OpenAI"
+    name   = "dall-e-2"
   }
 
   sku {
-    # Standard quota pool — GlobalStandard requires subscription allowlisting
     name     = "Standard"
     capacity = 1
   }

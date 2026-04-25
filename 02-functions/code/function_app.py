@@ -9,7 +9,7 @@
 #   DELETE /api/history/{job_id} → delete job + blobs
 #
 # Worker (Service Bus queue trigger):
-#   cartoonify_worker          → download original, gpt-image-1, upload cartoon
+#   cartoonify_worker          → download original, dall-e-2, upload cartoon
 #
 # Auth: JWT validated in code against Entra External ID JWKS. The sub claim
 # becomes the Cosmos DB partition key (/owner), enforcing per-user isolation.
@@ -582,7 +582,7 @@ def cartoonify_worker(msg: func.ServiceBusMessage) -> None:
     """Process a cartoonify job from the Service Bus queue.
 
     Reads the job message, downloads the original image, normalizes it,
-    calls gpt-image-1 images.edit with the style prompt, uploads the
+    calls dall-e-2 images.edit with the style prompt, uploads the
     cartoon to blob storage, and updates the Cosmos DB job status.
 
     Raises on hard failure so the Service Bus SDK can retry / dead-letter.
@@ -642,13 +642,24 @@ def cartoonify_worker(msg: func.ServiceBusMessage) -> None:
         img.save(buf, format="PNG", optimize=True)
         png_bytes = buf.getvalue()
 
-        # 3. Call gpt-image-1 images.edit — input image + style prompt
+        # 3. Call dall-e-2 images.edit — input image + all-transparent mask + prompt.
+        # All-transparent mask tells the model to regenerate the entire image
+        # in the requested style while using the original as context.
         prompt = STYLE_PROMPTS.get(style, "")
         if prompt_extra:
             prompt = f"{prompt}, {prompt_extra}"
 
+        mask_img = Image.new("RGBA", (TARGET_SIZE, TARGET_SIZE), (0, 0, 0, 0))
+        mask_buf = io.BytesIO()
+        mask_img.save(mask_buf, format="PNG")
+        mask_bytes = mask_buf.getvalue()
+
+        rgba_buf = io.BytesIO()
+        img.convert("RGBA").save(rgba_buf, format="PNG")
+        rgba_bytes = rgba_buf.getvalue()
+
         # Managed identity auth — no API key in app settings
-        credential    = DefaultAzureCredential()
+        credential     = DefaultAzureCredential()
         token_provider = get_bearer_token_provider(
             credential,
             "https://cognitiveservices.azure.com/.default",
@@ -656,16 +667,18 @@ def cartoonify_worker(msg: func.ServiceBusMessage) -> None:
         openai_client = AzureOpenAI(
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
             azure_ad_token_provider=token_provider,
-            api_version="2025-04-01-preview",
+            api_version="2024-02-01",
         )
 
-        logging.info("Calling gpt-image-1 style=%s job=%s", style, job_id)
+        logging.info("Calling dall-e-2 style=%s job=%s", style, job_id)
         image_response = openai_client.images.edit(
             model=AZURE_OPENAI_DEPLOYMENT,
-            image=("image.png", png_bytes, "image/png"),
+            image=("image.png", rgba_bytes, "image/png"),
+            mask=("mask.png", mask_bytes, "image/png"),
             prompt=prompt,
             size="1024x1024",
             n=1,
+            response_format="b64_json",
         )
         cartoon_bytes = base64.b64decode(image_response.data[0].b64_json)
 
