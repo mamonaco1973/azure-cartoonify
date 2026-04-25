@@ -1,7 +1,7 @@
 variable "location" {
   description = "Azure region — must match 01-backend"
   type        = string
-  default     = "East US"
+  default     = "Central US"
 }
 
 variable "resource_group_name" {

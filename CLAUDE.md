@@ -111,7 +111,7 @@ a Function App setting for SAS signing.
 | Resource | Name pattern |
 |---|---|
 | Resource group | `cartoonify-rg` |
-| Location | `East US` |
+| Location | `Central US` |
 | Function App | `cartoonify-func-<hex>` |
 | Service Bus namespace | `sb-cartoonify-<hex>` |
 | Service Bus queue | `cartoonify-jobs` |
