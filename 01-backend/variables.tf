@@ -1,7 +1,7 @@
 variable "location" {
   description = "Azure region for all resources"
   type        = string
-  default     = "Central US"
+  default     = "East US"
 }
 
 variable "entra_tenant_id" {
@@ -10,7 +10,7 @@ variable "entra_tenant_id" {
 }
 
 variable "entra_tenant_name" {
-  description = "Entra External tenant name prefix (e.g. 'mynotesapp' from mynotesapp.onmicrosoft.com)"
+  description = "Entra External tenant name prefix (e.g. 'myapp' from myapp.onmicrosoft.com)"
   type        = string
 }
 

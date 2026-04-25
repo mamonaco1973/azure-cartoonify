@@ -1,16 +1,35 @@
-# azure-entra-app
+# azure-cartoonify
 
-Serverless CRUD API for managing notes, secured with Microsoft Entra External ID JWT authentication. Azure Functions, Cosmos DB, Blob Storage static website.
+Serverless image-to-cartoon service on Azure. Users sign in via Entra External
+ID, upload a photo, pick a style, and an Azure Service Bus–driven worker calls
+Azure OpenAI gpt-image-1 to generate a cartoon. Results are stored in Blob
+Storage for 7 days and accessed via short-lived SAS URLs.
 
 ## Architecture
 
 ```
-Browser → Blob Storage (SPA) → Entra External ID sign-in UI → callback.html (PKCE) → sessionStorage (JWT)
-                                                                                             ↓
-Browser → Azure Functions (JWT validated in Python code) → Cosmos DB (notes, /owner partition)
+Browser → Blob Storage SPA → Entra External ID (PKCE) → sessionStorage (JWT)
+
+Browser → POST /api/upload-url → Function App (JWT) → Blob SAS URL
+Browser → PUT (direct) ──────→ Blob Storage media (originals/<owner>/<job_id>.<ext>)
+
+Browser → POST /api/generate → Function App (JWT) → Cosmos DB (status=submitted)
+                                                  → Service Bus cartoonify-jobs
+                                                          ↓
+                               Service Bus trigger (cartoonify_worker)
+                               • Pillow: EXIF strip, 1024×1024 crop/resize
+                               • Azure OpenAI gpt-image-1 images.edit
+                               • Blob upload cartoons/<owner>/<job_id>.png
+                               • Cosmos DB (status=complete)
+
+Browser → GET /api/result/{job_id} → SAS download URLs
+Browser → GET /api/history         → newest 50 for owner
+Browser → DELETE /api/history/{id} → delete blobs + Cosmos row
 ```
 
-**Azure services:** Azure Functions (FC1 Flex Consumption), Cosmos DB (SQL API), Blob Storage static website, Microsoft Entra External ID
+**Azure services:** Azure Functions (FC1 Flex Consumption), Service Bus (Standard),
+Cosmos DB (SQL API), Blob Storage (web SPA + media), Azure OpenAI (gpt-image-1),
+Microsoft Entra External ID.
 
 ## Prerequisites
 
@@ -18,57 +37,44 @@ The following must exist **before** running `apply.sh`. Everything else is autom
 
 | Prerequisite | Notes |
 |---|---|
-| Entra External tenant | Created in Azure Portal (tenant type = External); provides `ENTRA_TENANT_ID` and `ENTRA_TENANT_NAME` |
+| Entra External tenant | Created in Azure Portal; provides `ENTRA_TENANT_ID` and `ENTRA_TENANT_NAME` |
 | Sign-up/sign-in user flow | Created in the External tenant; email + password identity provider |
-| Service principal in External tenant | Needs `Application.ReadWrite.All` on Microsoft Graph; provides `ENTRA_SP_CLIENT_ID` / `ENTRA_SP_CLIENT_SECRET` |
+| Service principal in External tenant | Needs `Application.ReadWrite.All` on Microsoft Graph |
 
 ## Required Environment Variables
 
 ```bash
-# Azure subscription
 ARM_CLIENT_ID
 ARM_CLIENT_SECRET
 ARM_SUBSCRIPTION_ID
 ARM_TENANT_ID
-
-# Microsoft Entra External ID
-ENTRA_TENANT_ID          # GUID of the External tenant
-ENTRA_TENANT_NAME        # Domain prefix only (e.g. "mynotesapp" from mynotesapp.onmicrosoft.com)
-ENTRA_SP_CLIENT_ID       # Service principal client ID registered IN the External tenant
-ENTRA_SP_CLIENT_SECRET   # Service principal secret
+ENTRA_TENANT_ID
+ENTRA_TENANT_NAME
+ENTRA_SP_CLIENT_ID
+ENTRA_SP_CLIENT_SECRET
+ENTRA_USER_FLOW_NAME
 ```
 
 ## Deploy / Destroy
 
 ```bash
-./apply.sh      # 4-phase deploy: infra → function code → config.json → webapp
-./destroy.sh    # Reverse teardown: webapp → infra (Entra app reg + functions + Cosmos + storage)
-./validate.sh   # Prints web app URL (auth prevents automated curl tests)
+./apply.sh      # 3-stage deploy: backend → functions → webapp
+./destroy.sh    # Reverse teardown
+./validate.sh   # Print API + web URLs
 ```
 
 ## Project Structure
 
 ```
-azure-entra-app/
-├── 01-functions/
-│   ├── code/
-│   │   ├── function_app.py   5 HTTP-triggered functions; JWT validated in Python
-│   │   ├── requirements.txt  azure-functions, azure-cosmos, PyJWT, cryptography, requests
-│   │   └── host.json         Extension bundle v4
-│   ├── entra.tf              azuread_application (SPA, PKCE, redirect URI → web storage)
-│   ├── cosmosdb.tf           Cosmos DB account → database → container (/owner partition)
-│   ├── functions.tf          Functions storage, service plan, Function App + Entra env vars
-│   ├── main.tf               azurerm + azuread (External tenant) providers, resource group, random suffix
-│   ├── outputs.tf            function_app_url, web_storage_name, web_base_url, entra_client_id, entra_authority
-│   ├── storage.tf            Web hosting storage account (moved here so URL is known for Entra redirect URI)
-│   └── variables.tf          location + Entra vars (populated via TF_VAR_* in apply.sh)
-├── 02-webapp/
-│   ├── callback.html         PKCE callback: exchanges auth code for tokens, stores in sessionStorage
-│   ├── config.json           Generated by apply.sh — NOT committed
-│   ├── favicon.ico           Site icon
-│   ├── index.html.tmpl       SPA with auth gate, PKCE sign-in/out, JWT injected in all API calls
-│   ├── main.tf               azurerm provider + web_storage_name variable
-│   └── storage.tf            Blob uploads only (index.html, callback.html, config.json, favicon.ico)
+azure-cartoonify/
+├── 01-backend/          SB, Cosmos DB, Blob Storage (web+media), Azure OpenAI, Entra app
+├── 02-functions/        Function App Terraform + code deploy
+│   └── code/
+│       ├── function_app.py   5 HTTP routes + SB queue trigger worker
+│       ├── common.py         shared helpers
+│       ├── requirements.txt
+│       └── host.json
+├── 03-webapp/           SPA: index.html.tmpl, callback.html, favicon.ico
 ├── apply.sh
 ├── destroy.sh
 ├── validate.sh
@@ -77,53 +83,36 @@ azure-entra-app/
 
 ## Key Design Decisions
 
-**Web storage in 01-functions, not 02-webapp**
-The Blob Storage account must exist before the Entra app registration can be written (the redirect URI references the storage URL). Both are created in the same `terraform apply` — Terraform resolves the dependency graph.
+**3-stage Terraform split** — 01-backend provisions all stateful infrastructure
+(including web storage whose URL must be known before the Entra redirect URI is
+written). 02-functions provisions compute and RBAC, referencing 01-backend
+outputs as variables. 03-webapp uploads SPA assets.
 
-**JWT validation in function code, not Easy Auth**
-Each function calls `validate_token(req)` which verifies the Bearer token against Entra's JWKS endpoint (`https://<tenant>.ciamlogin.com/<tenant_id>/discovery/v2.0/keys`). The JWKS response is cached in a module-level variable (warm invocations skip the network call). Owner is set from the JWT `sub` claim, enforcing per-user data isolation in Cosmos DB.
+**JWT in code, not Easy Auth** — each HTTP route calls `validate_token(req)`;
+JWKS is cached per warm instance. The JWT `sub` claim is the Cosmos DB partition
+key, enforcing per-user data isolation at the storage layer.
 
-**No policy name required**
-Entra External ID does not require a policy name in the authority URL or JWKS discovery URL. The authority is simply `https://<tenant>.ciamlogin.com/<tenant_id>/v2.0`.
+**Azure OpenAI managed identity** — the Function App calls gpt-image-1 via
+`get_bearer_token_provider` (no API key in app settings); access is granted
+via `Cognitive Services OpenAI User` role assignment.
 
-**CORS set to specific origin**
-`allowed_origins` is set to the Blob Storage URL (not `*`) so the browser will accept `Authorization` headers in cross-origin requests.
-
-## config.json (generated at deploy time)
-
-```json
-{
-  "authority":   "https://<tenant>.ciamlogin.com/<tenant_id>/v2.0",
-  "clientId":    "<entra_app_client_id>",
-  "redirectUri": "https://<storage>.z1.web.core.windows.net/callback.html",
-  "apiBaseUrl":  "https://<func-app>.azurewebsites.net/api"
-}
-```
-
-## Auth Flow
-
-```
-1. User clicks "Sign In"
-2. index.html generates PKCE verifier + challenge, stores in sessionStorage
-3. Redirect → Entra External ID sign-in UI (authorize endpoint)
-4. User creates account or signs in
-5. Entra redirects to callback.html?code=...&state=...
-6. callback.html exchanges code + verifier for tokens (POST /oauth2/v2.0/token)
-7. access_token, id_token, refresh_token stored in sessionStorage
-8. Redirect → index.html
-9. API calls include Authorization: Bearer <access_token>
-10. Function validates JWT signature, extracts sub as owner
-11. Cosmos DB queries scoped to owner partition key
-```
+**Blob SAS for upload/download** — replaces S3 presigned POST/GET. Upload uses
+`BlobSasPermissions(create=True, write=True)` with a 5-min expiry; download uses
+`BlobSasPermissions(read=True)` with a 4-hour expiry. Account key is stored as
+a Function App setting for SAS signing.
 
 ## Key Resources
 
 | Resource | Name pattern |
 |---|---|
-| Resource group | `notes-entra-rg` |
-| Location | `Central US` |
-| Function App | `notes-entra-func-<suffix>` |
-| Cosmos DB account | `notes-entra-cosmos-<suffix>` |
-| Cosmos DB container | `notes` with partition key `/owner` |
-| Web storage | `notesentraweb<suffix>` |
-| Entra app registration | `notes-entra-app` |
+| Resource group | `cartoonify-rg` |
+| Location | `East US` |
+| Function App | `cartoonify-func-<hex>` |
+| Service Bus namespace | `sb-cartoonify-<hex>` |
+| Service Bus queue | `cartoonify-jobs` |
+| Cosmos DB account | `cosmos-cartoonify-<hex>` |
+| Cosmos DB container | `jobs`, partition key `/owner` |
+| Media storage | `cartoonmedia<hex>` |
+| Web storage | `cartoonweb<hex>` |
+| Azure OpenAI | `cartoonify-openai-<random>` |
+| Entra app registration | `cartoonify-app` |

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 echo "NOTE: Validating that required commands are found in your PATH."
 

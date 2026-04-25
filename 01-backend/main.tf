@@ -23,8 +23,8 @@ provider "azurerm" {
   }
 }
 
-# Points at the Entra External tenant, not the main subscription tenant.
-# Requires a service principal registered IN the Entra External tenant with
+# Points at the Entra External tenant for the app registration.
+# Requires a service principal registered IN the External tenant with
 # Application.ReadWrite.All on Microsoft Graph.
 provider "azuread" {
   tenant_id     = var.entra_tenant_id
@@ -36,7 +36,7 @@ resource "random_id" "suffix" {
   byte_length = 4
 }
 
-resource "azurerm_resource_group" "notes" {
-  name     = "notes-entra-rg"
+resource "azurerm_resource_group" "cartoonify" {
+  name     = "cartoonify-rg"
   location = var.location
 }

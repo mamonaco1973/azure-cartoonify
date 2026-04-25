@@ -4,23 +4,50 @@ set -euo pipefail
 ./check_env.sh
 
 # Read outputs before state is destroyed.
-cd 01-functions
+cd 01-backend
 WEB_STORAGE_NAME=$(terraform output -raw web_storage_name 2>/dev/null || true)
 ENTRA_CLIENT_ID=$(terraform output -raw entra_client_id 2>/dev/null || true)
 cd ..
 
+# ── Destroy web app first (depends on web storage from 01-backend) ────────────
+
 echo "NOTE: Destroying web app..."
-cd 02-webapp
+cd 03-webapp
 terraform init -upgrade
 terraform destroy -auto-approve -var="web_storage_name=${WEB_STORAGE_NAME:-placeholder}"
 cd ..
 
 
+# ── Destroy Function App ───────────────────────────────────────────────────────
+
+echo "NOTE: Destroying Function App..."
+cd 02-functions
+terraform init -upgrade
+terraform destroy -auto-approve \
+  -var="resource_group_name=cartoonify-rg" \
+  -var="servicebus_namespace_fqdn=placeholder" \
+  -var="servicebus_queue_name=placeholder" \
+  -var="servicebus_queue_id=placeholder" \
+  -var="cosmos_endpoint=placeholder" \
+  -var="cosmos_account_name=placeholder" \
+  -var="cosmos_role_definition_id=placeholder" \
+  -var="media_storage_name=placeholder" \
+  -var="media_storage_key=placeholder" \
+  -var="media_blob_endpoint=placeholder" \
+  -var="openai_endpoint=placeholder" \
+  -var="openai_account_id=placeholder" \
+  -var="openai_deployment_name=placeholder" \
+  -var="entra_tenant_name=placeholder" \
+  -var="entra_tenant_id=placeholder" \
+  -var="entra_client_id=placeholder" \
+  -var="web_origin=placeholder"
+cd ..
+
+
 # ── Phase 1.5 cleanup: remove app from Entra user flow ────────────────────────
 
-echo "NOTE: Removing notes-entra-app from user flow '${ENTRA_USER_FLOW_NAME}'..."
+echo "NOTE: Removing cartoonify-app from user flow '${ENTRA_USER_FLOW_NAME}'..."
 
-# Run in a subshell so any unexpected failure logs and continues the destroy.
 (
   if [[ -z "$ENTRA_CLIENT_ID" ]]; then
     echo "NOTE: No Entra client ID in state. Skipping association cleanup."
@@ -58,25 +85,24 @@ echo "NOTE: Removing notes-entra-app from user flow '${ENTRA_USER_FLOW_NAME}'...
   if [[ "$HTTP_STATUS" == "204" ]]; then
     echo "NOTE: App removed from user flow."
   elif [[ "$HTTP_STATUS" == "404" ]]; then
-    # Already gone — no action needed.
     echo "NOTE: App was not associated with user flow (already clean)."
   else
-    echo "WARNING: Unexpected status removing app from user flow (HTTP ${HTTP_STATUS})."
+    echo "WARNING: Unexpected HTTP ${HTTP_STATUS} removing app from user flow."
     exit 1
   fi
 ) || echo "WARNING: Phase 1.5 cleanup failed. Continuing with destroy..."
 
 
-# ── Destroy infrastructure ─────────────────────────────────────────────────────
+# ── Destroy backend infrastructure ────────────────────────────────────────────
 
-echo "NOTE: Destroying functions, Cosmos DB, web storage, and Entra app registration..."
+echo "NOTE: Destroying backend infrastructure..."
 
 export TF_VAR_entra_tenant_id="$ENTRA_TENANT_ID"
 export TF_VAR_entra_tenant_name="$ENTRA_TENANT_NAME"
 export TF_VAR_entra_sp_client_id="$ENTRA_SP_CLIENT_ID"
 export TF_VAR_entra_sp_client_secret="$ENTRA_SP_CLIENT_SECRET"
 
-cd 01-functions
+cd 01-backend
 terraform init -upgrade
 terraform destroy -auto-approve
 cd ..

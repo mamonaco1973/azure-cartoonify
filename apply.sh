@@ -4,12 +4,11 @@ set -euo pipefail
 ./check_env.sh
 
 
-# ── Phase 1: Infrastructure (Cosmos DB + Functions + Web Storage + Entra App Reg)
+# ── Phase 1: Core infrastructure (SB, Cosmos, Storage, OpenAI, Entra app) ────
 
-echo "NOTE: Deploying infrastructure..."
-cd 01-functions
+echo "NOTE: Deploying backend infrastructure..."
+cd 01-backend
 
-# Pass Entra External ID config as Terraform variables.
 export TF_VAR_entra_tenant_id="$ENTRA_TENANT_ID"
 export TF_VAR_entra_tenant_name="$ENTRA_TENANT_NAME"
 export TF_VAR_entra_sp_client_id="$ENTRA_SP_CLIENT_ID"
@@ -22,6 +21,18 @@ terraform apply -auto-approve
 RESOURCE_GROUP=$(terraform output -raw resource_group_name)
 WEB_STORAGE_NAME=$(terraform output -raw web_storage_name)
 WEB_BASE_URL=$(terraform output -raw web_base_url)
+MEDIA_STORAGE_NAME=$(terraform output -raw media_storage_name)
+MEDIA_STORAGE_KEY=$(terraform output -raw media_storage_key)
+MEDIA_BLOB_ENDPOINT=$(terraform output -raw media_blob_endpoint)
+COSMOS_ENDPOINT=$(terraform output -raw cosmos_endpoint)
+COSMOS_ACCOUNT_NAME=$(terraform output -raw cosmos_account_name)
+COSMOS_ROLE_DEF_ID=$(terraform output -raw cosmos_role_definition_id)
+SB_NAMESPACE_FQDN=$(terraform output -raw servicebus_namespace_fqdn)
+SB_QUEUE_NAME=$(terraform output -raw servicebus_queue_name)
+SB_QUEUE_ID=$(terraform output -raw servicebus_queue_id)
+OPENAI_ENDPOINT=$(terraform output -raw openai_endpoint)
+OPENAI_ACCOUNT_ID=$(terraform output -raw openai_account_id)
+OPENAI_DEPLOYMENT=$(terraform output -raw openai_deployment_name)
 ENTRA_CLIENT_ID=$(terraform output -raw entra_client_id)
 ENTRA_AUTHORITY=$(terraform output -raw entra_authority)
 
@@ -30,7 +41,7 @@ cd ..
 
 # ── Phase 1.5: Associate app with Entra user flow via Graph API ───────────────
 
-echo "NOTE: Associating notes-entra-app with user flow '${ENTRA_USER_FLOW_NAME}'..."
+echo "NOTE: Associating cartoonify-app with user flow '${ENTRA_USER_FLOW_NAME}'..."
 
 # The ARM SP has no Graph permissions in the External tenant — acquire a
 # separate token using the Entra-scoped SP.
@@ -47,7 +58,6 @@ if [[ -z "$GRAPH_TOKEN" || "$GRAPH_TOKEN" == "null" ]]; then
   exit 1
 fi
 
-# Find the user flow ID by display name.
 FLOW_ID=$(curl -s -G \
   --data-urlencode "\$filter=displayName eq '${ENTRA_USER_FLOW_NAME}'" \
   "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows" \
@@ -83,10 +93,38 @@ else
 fi
 
 
-# ── Phase 2: Deploy function code ─────────────────────────────────────────────
+# ── Phase 2: Function App (compute + RBAC) ───────────────────────────────────
+
+echo "NOTE: Deploying Function App..."
+cd 02-functions
+
+export TF_VAR_resource_group_name="$RESOURCE_GROUP"
+export TF_VAR_servicebus_namespace_fqdn="$SB_NAMESPACE_FQDN"
+export TF_VAR_servicebus_queue_name="$SB_QUEUE_NAME"
+export TF_VAR_servicebus_queue_id="$SB_QUEUE_ID"
+export TF_VAR_cosmos_endpoint="$COSMOS_ENDPOINT"
+export TF_VAR_cosmos_account_name="$COSMOS_ACCOUNT_NAME"
+export TF_VAR_cosmos_role_definition_id="$COSMOS_ROLE_DEF_ID"
+export TF_VAR_media_storage_name="$MEDIA_STORAGE_NAME"
+export TF_VAR_media_storage_key="$MEDIA_STORAGE_KEY"
+export TF_VAR_media_blob_endpoint="$MEDIA_BLOB_ENDPOINT"
+export TF_VAR_openai_endpoint="$OPENAI_ENDPOINT"
+export TF_VAR_openai_account_id="$OPENAI_ACCOUNT_ID"
+export TF_VAR_openai_deployment_name="$OPENAI_DEPLOYMENT"
+export TF_VAR_entra_tenant_name="$ENTRA_TENANT_NAME"
+export TF_VAR_entra_tenant_id="$ENTRA_TENANT_ID"
+export TF_VAR_entra_client_id="$ENTRA_CLIENT_ID"
+export TF_VAR_web_origin="$WEB_BASE_URL"
+
+terraform init -upgrade
+terraform apply -auto-approve
+
+cd ..
+
+# ── Phase 2.5: Deploy function code ───────────────────────────────────────────
 
 echo "NOTE: Packaging and deploying function code..."
-cd 01-functions/code
+cd 02-functions/code
 
 rm -f app.zip
 zip -r app.zip . \
@@ -97,7 +135,7 @@ zip -r app.zip . \
 
 FUNC_APP_NAME=$(az functionapp list \
   --resource-group "$RESOURCE_GROUP" \
-  --query "[?starts_with(name, 'notes-entra-func-')].name" \
+  --query "[?starts_with(name, 'cartoonify-func-')].name" \
   --output tsv)
 
 az functionapp deployment source config-zip \
@@ -118,13 +156,13 @@ echo "NOTE: Function app: ${FUNC_APP_NAME}"
 echo "NOTE: API base:     ${API_BASE}"
 
 
-# ── Phase 3: Build web app config ─────────────────────────────────────────────
+# ── Phase 3: Web app ─────────────────────────────────────────────────────────
 
 echo "NOTE: Building web app config..."
 
 REDIRECT_URI="${WEB_BASE_URL}callback.html"
 
-cat > 02-webapp/config.json <<EOF
+cat > 03-webapp/config.json <<EOF
 {
   "authority":   "${ENTRA_AUTHORITY}",
   "clientId":    "${ENTRA_CLIENT_ID}",
@@ -133,14 +171,11 @@ cat > 02-webapp/config.json <<EOF
 }
 EOF
 
-# index.html.tmpl has no placeholders — copy as-is.
-cp 02-webapp/index.html.tmpl 02-webapp/index.html
-
-
-# ── Phase 4: Deploy web app ────────────────────────────────────────────────────
+# index.html.tmpl has no template placeholders — copy directly
+cp 03-webapp/index.html.tmpl 03-webapp/index.html
 
 echo "NOTE: Deploying web app..."
-cd 02-webapp
+cd 03-webapp
 terraform init -upgrade
 terraform apply -auto-approve -var="web_storage_name=${WEB_STORAGE_NAME}"
 
