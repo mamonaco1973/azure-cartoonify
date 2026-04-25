@@ -616,6 +616,14 @@ def cartoonify_worker(msg: func.ServiceBusMessage) -> None:
             ],
         )
 
+    if not OPENAI_API_KEY:
+        _mark("error", error_message=(
+            "An OpenAI API key is required to generate cartoons. "
+            "Set OPENAI_API_KEY and re-run apply.sh."
+        ))
+        logging.error("Worker: OPENAI_API_KEY not set — job=%s marked error", job_id)
+        return
+
     try:
         _mark("processing")
 
@@ -644,12 +652,6 @@ def cartoonify_worker(msg: func.ServiceBusMessage) -> None:
         png_bytes = buf.getvalue()
 
         # 3. Call gpt-image-1 images.edit via api.openai.com
-        if not OPENAI_API_KEY:
-            raise RuntimeError(
-                "An OpenAI API key is required to generate cartoons. "
-                "Set OPENAI_API_KEY and re-run apply.sh."
-            )
-
         prompt = STYLE_PROMPTS.get(style, "")
         if prompt_extra:
             prompt = f"{prompt}, {prompt_extra}"
