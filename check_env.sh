@@ -40,7 +40,7 @@ required_vars=(
 all_set=true
 
 for var in "${required_vars[@]}"; do
-  if [ -z "${!var}" ]; then
+  if [ -z "${!var:-}" ]; then
     echo "ERROR: $var is not set or is empty."
     all_set=false
   else
