@@ -42,7 +42,7 @@ terraform destroy -auto-approve \
 cd ..
 
 
-# ── Phase 1.5 cleanup: remove app from Entra user flow ────────────────────────
+# ── Step 2 cleanup: remove app from Entra user flow ───────────────────────────
 
 echo "NOTE: Removing cartoonify-app from user flow '${ENTRA_USER_FLOW_NAME}'..."
 
@@ -88,7 +88,7 @@ echo "NOTE: Removing cartoonify-app from user flow '${ENTRA_USER_FLOW_NAME}'..."
     echo "WARNING: Unexpected HTTP ${HTTP_STATUS} removing app from user flow."
     exit 1
   fi
-) || echo "WARNING: Phase 1.5 cleanup failed. Continuing with destroy..."
+) || echo "WARNING: Step 2 cleanup failed. Continuing with destroy..."
 
 
 # ── Destroy backend infrastructure ────────────────────────────────────────────

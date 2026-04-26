@@ -1,56 +1,57 @@
-# Azure Serverless Notes API with Azure Functions, Cosmos DB, and Microsoft Entra External ID
+# Azure Cartoonify — Serverless Image-to-Cartoon Service
 
-This project delivers a fully automated **serverless CRUD API** on Azure, secured
-with **Microsoft Entra External ID** authentication. It uses **Azure Functions**,
-**Azure Cosmos DB**, and **Azure Blob Storage**, provisioned entirely with **Terraform**
-and deployed with shell scripts — no virtual machines, no manual portal configuration
-beyond the one-time Entra External tenant setup.
-
-For testing and demonstration purposes, a lightweight **HTML web frontend**
-interacts directly with the deployed API, allowing signed-in users to create, view,
-update, and delete their own notes from a browser.
+This project delivers a fully automated **serverless image-to-cartoon service** on
+Azure. Users sign in via **Microsoft Entra External ID**, upload a photo, pick a
+cartoon style, and a **Service Bus–driven worker** calls the **OpenAI API**
+(`gpt-image-1`) to generate a cartoonified version. Results are stored in **Blob
+Storage** and accessed via short-lived SAS URLs.
 
 ![webapp](webapp.png)
 
-This design follows a **serverless microservice architecture** where Azure Functions
-handle HTTP routing and JWT validation, Cosmos DB provides fully managed NoSQL
-persistence scoped per authenticated user, and Blob Storage hosts the static
-frontend.
+The design follows a **serverless async architecture**: the HTTP API accepts jobs
+immediately and returns, a Service Bus queue decouples submission from processing,
+and a Function App worker handles the heavy lifting — image normalization via Pillow
+and AI image generation via OpenAI.
 
 Key capabilities demonstrated:
 
-1. **Authenticated CRUD API** — All five REST endpoints require a valid Entra External
-   ID access token. The function code validates the JWT signature against the Entra
-   JWKS endpoint and rejects unsigned or expired tokens with HTTP 401.
-2. **Per-User Data Isolation** — The Cosmos DB partition key `/owner` is set from
-   the JWT `sub` claim. Each user can only read and write their own notes — enforced
-   at the storage layer, not just the application layer.
-3. **PKCE OAuth2 Flow** — The SPA uses the Authorization Code + PKCE flow with no
-   client secret. `callback.html` exchanges the authorization code for tokens and
-   stores them in `sessionStorage`.
-4. **Stateless Compute Layer** — All five operations are handled by a single
-   Function App on a Flex Consumption plan — zero idle cost, scales on demand.
-5. **Infrastructure as Code (IaC)** — Terraform provisions the Function App, Cosmos
-   DB, Blob Storage, and Entra app registration in a repeatable, auditable way.
+1. **Async Job Queue** — Photo upload, job submission, and cartoon generation are
+   fully decoupled via Azure Service Bus. The browser polls for completion rather
+   than waiting on a long HTTP request.
+2. **OpenAI Image Editing** — `gpt-image-1` `images.edit()` takes the uploaded photo
+   and a style prompt and returns a cartoonified PNG.
+3. **Authenticated API** — All HTTP endpoints require a valid Entra External ID JWT.
+   The function code validates the token signature against the Entra JWKS endpoint.
+4. **Per-User Data Isolation** — Cosmos DB partition key `/owner` is set from the
+   JWT `sub` claim. Users can only read and delete their own jobs.
+5. **Blob SAS Tokens** — Direct browser-to-storage upload via write-only SAS URL
+   (5 min). Cartoon downloads via read-only SAS URL (4 hours). No API proxying of
+   binary data.
+6. **Infrastructure as Code** — Terraform provisions all resources in a 3-stage
+   deploy. No manual portal configuration beyond the one-time Entra setup.
 
 ---
 
-## Authentication Flow
-
-![diagram](azure-entra-app.png)
+## Architecture
 
 ```
-1. User clicks "Sign In" in the browser
-2. SPA generates PKCE verifier + challenge, stores verifier in sessionStorage
-3. Browser redirects to Entra External ID hosted sign-in UI (authorize endpoint)
-4. User creates an account or signs in with email + password
-5. Entra redirects to callback.html?code=...&state=...
-6. callback.html validates state, exchanges code + verifier for tokens
-7. access_token, id_token, refresh_token stored in sessionStorage
-8. Browser redirects to index.html
-9. All API calls include Authorization: Bearer <access_token>
-10. Function validates JWT signature via Entra JWKS, extracts sub as owner
-11. Cosmos DB queries are scoped to the owner partition key
+Browser → Blob Storage SPA → Entra External ID (PKCE) → sessionStorage (JWT)
+
+Browser → POST /api/upload-url → Function App (JWT) → Blob SAS URL
+Browser → PUT (direct) ──────→ Blob Storage (originals/<owner>/<job_id>.<ext>)
+
+Browser → POST /api/generate → Function App (JWT) → Cosmos DB (status=submitted)
+                                                  → Service Bus cartoonify-jobs
+                                                          ↓
+                               Service Bus trigger (cartoonify_worker)
+                               • Pillow: EXIF strip, 1024×1024 crop/resize
+                               • OpenAI gpt-image-1 images.edit
+                               • Blob upload (cartoons/<owner>/<job_id>.png)
+                               • Cosmos DB (status=complete)
+
+Browser → GET /api/result/{job_id} → SAS download URLs
+Browser → GET /api/history         → newest 50 jobs for owner
+Browser → DELETE /api/history/{id} → delete blobs + Cosmos row
 ```
 
 ---
@@ -63,6 +64,8 @@ Key capabilities demonstrated:
 * [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
 * [Terraform](https://developer.hashicorp.com/terraform/install)
 * [jq](https://jqlang.github.io/jq/download/)
+* [zip](https://linux.die.net/man/1/zip)
+* An [OpenAI API key](https://platform.openai.com/api-keys) with access to `gpt-image-1`
 
 ### One-time Entra External ID setup (Azure Portal)
 
@@ -73,15 +76,15 @@ Everything else is automated.
 
 In the Azure Portal, go to **Microsoft Entra ID → Overview → Manage tenants → New**.
 Select **External** as the tenant type. Choose a subdomain name — this becomes
-`ENTRA_TENANT_NAME` (e.g. `mynotesapp` from `mynotesapp.onmicrosoft.com`). Note the
-**tenant ID (GUID)** from the tenant overview — this is `ENTRA_TENANT_ID`.
+`ENTRA_TENANT_NAME` (e.g. `myapp` from `myapp.onmicrosoft.com`). Note the
+**tenant ID (GUID)** from the overview — this is `ENTRA_TENANT_ID`.
 
 **2. Create a sign-up/sign-in user flow**
 
 Switch your portal directory to the External tenant. Go to **Microsoft Entra ID →
 External Identities → User flows → New user flow**. Select **Sign up and sign in**.
-Under **Identity providers**, select **Email with password**. Under **User attributes**,
-collect and return **Email Address**. Click **Create**.
+Under **Identity providers**, select **Email with password**. Under **User
+attributes**, collect and return **Email Address**. Click **Create**.
 
 **3. Create a service principal in the Entra External tenant**
 
@@ -89,8 +92,8 @@ Still in the External tenant, go to **App registrations → New registration**. 
 creation, go to **Certificates & secrets** and add a client secret. Go to **API
 permissions → Add a permission → Microsoft Graph → Application permissions**, add
 `Application.ReadWrite.All` and `EventListener.ReadWrite.All`, then click
-**Grant admin consent**. Note the **Application (client) ID**
-(`ENTRA_SP_CLIENT_ID`) and the secret (`ENTRA_SP_CLIENT_SECRET`).
+**Grant admin consent**. Note the **Application (client) ID** (`ENTRA_SP_CLIENT_ID`)
+and the secret (`ENTRA_SP_CLIENT_SECRET`).
 
 ### Required environment variables
 
@@ -102,11 +105,14 @@ export ARM_SUBSCRIPTION_ID="..."
 export ARM_TENANT_ID="..."
 
 # Microsoft Entra External ID
-export ENTRA_TENANT_ID="..."           # GUID of the External tenant
-export ENTRA_TENANT_NAME="mynotesapp"  # Domain prefix only (no .onmicrosoft.com)
-export ENTRA_SP_CLIENT_ID="..."        # Service principal registered IN the External tenant
+export ENTRA_TENANT_ID="..."          # GUID of the External tenant
+export ENTRA_TENANT_NAME="myapp"      # Domain prefix only (no .onmicrosoft.com)
+export ENTRA_SP_CLIENT_ID="..."       # Service principal registered IN the External tenant
 export ENTRA_SP_CLIENT_SECRET="..."
-export ENTRA_USER_FLOW_NAME="..."      # Display name of the sign-up/sign-in user flow
+export ENTRA_USER_FLOW_NAME="..."     # Display name of the sign-up/sign-in user flow
+
+# OpenAI (optional at deploy time — set and re-run apply.sh to activate)
+export OPENAI_API_KEY="sk-..."
 ```
 
 ---
@@ -114,37 +120,26 @@ export ENTRA_USER_FLOW_NAME="..."      # Display name of the sign-up/sign-in use
 ## Download this Repository
 
 ```bash
-git clone https://github.com/mamonaco1973/azure-entra-app.git
-cd azure-entra-app
+git clone https://github.com/mamonaco1973/azure-cartoonify.git
+cd azure-cartoonify
 ```
 
-## Build the Code
+## Deploy
 
-Run [check_env.sh](check_env.sh) to validate your environment, then run
-[apply.sh](apply.sh) to provision all infrastructure and deploy the application.
+Run [apply.sh](apply.sh) to provision all infrastructure and deploy the application.
 
 ```bash
-~/azure-entra-app$ ./apply.sh
-NOTE: All required commands are available.
-NOTE: All required environment variables are set.
-NOTE: Successfully logged into Azure.
-NOTE: Deploying infrastructure...
-
-Initializing the backend...
+./apply.sh
 ```
 
-`apply.sh` performs the following steps in order:
+`apply.sh` runs the following stages in order:
 
-1. Runs `check_env.sh` — validates CLI tools, env vars, and Azure authentication
-2. Deploys `01-functions` — resource group, Cosmos DB, Function App, Blob Storage
-   web account, and Entra app registration (with redirect URI pointed at the storage URL)
-3. Packages and deploys the Python function code via `az functionapp deployment source config-zip`
-4. Generates `02-webapp/config.json` with the Entra authority, client ID, redirect URI,
-   and API base URL
-5. Copies `index.html.tmpl` → `index.html`
-6. Deploys `02-webapp` — uploads `index.html`, `callback.html`, `config.json`, and
-   `favicon.ico` to the `$web` container
-7. Runs `validate.sh` to print the web app URL
+1. **check_env.sh** — validates CLI tools, env vars, and Azure credentials
+2. **01-backend** — Service Bus, Cosmos DB, Blob Storage (web + media), Entra app registration
+3. **Graph API** — associates the Entra app with the user flow
+4. **02-functions** — Function App (FC1 Flex Consumption), RBAC role assignments
+5. **Function code deploy** — packages and deploys Python function code via zip deploy
+6. **03-webapp** — generates `config.json`, uploads SPA assets to Blob Storage
 
 To tear down all resources:
 
@@ -156,113 +151,68 @@ To tear down all resources:
 
 ## Build Results
 
-When the deployment completes, the following resources are created in a single
-resource group `notes-entra-rg`:
+When the deployment completes, the following resources are created in `cartoonify-rg`:
 
-- **Azure Cosmos DB:**
-  - Account with Session consistency and GlobalDocumentDB kind
-  - Database `notes` with container `notes`
-  - Partition key `/owner` — set to the authenticated user's `sub` claim
-  - Item ID is a UUID
+- **Azure Service Bus (Standard)**
+  - Queue `cartoonify-jobs` — lock duration 3 min, max delivery 10, TTL 7 days
+  - RBAC: Function App managed identity has Sender + Receiver roles
 
-- **Azure Functions:**
-  - Flex Consumption plan (`FC1`) — serverless, pay-per-execution
-  - Python 3.11 runtime with Python v2 programming model
-  - Single `function_app.py` implementing all five routes
-  - CORS restricted to the Blob Storage origin
-  - Entra tenant name, tenant ID, and client ID injected via app settings
-  - JWT validation (`PyJWT` + `cryptography`) performed in function code
+- **Azure Cosmos DB**
+  - Account with Session consistency
+  - Database `cartoonify`, container `jobs`, partition key `/owner`
+  - Per-item TTL of 7 days — jobs auto-expire
+  - Custom SQL role definition scoped to the Function App identity
 
-- **Static Web App (Blob Storage):**
-  - Storage account `notesentraweb<suffix>` with static website hosting
-  - `index.html`, `callback.html`, `config.json`, and `favicon.ico` in the `$web` container
-  - PKCE OAuth2 flow — no client secret exposed in the browser
-  - Tokens stored in `sessionStorage`
+- **Blob Storage — media (`cartoonmedia<hex>`)**
+  - Containers: `originals` (uploaded photos), `cartoons` (generated output)
+  - CORS enabled for direct browser PUT uploads
+  - Lifecycle policy: both containers purged after 7 days
 
-- **Microsoft Entra External ID:**
-  - App registration `notes-entra-app` (SPA platform, no client secret)
+- **Blob Storage — web (`cartoonweb<hex>`)**
+  - Static website hosting for the SPA
+  - Contains `index.html`, `callback.html`, `config.json`, `favicon.ico`
+
+- **Azure Functions (FC1 Flex Consumption)**
+  - Python 3.11, 2048 MB instance memory, up to 50 instances
+  - 5 HTTP routes + 1 Service Bus queue trigger in a single `function_app.py`
+  - System-assigned managed identity for Service Bus and Cosmos DB access
+  - CORS locked to the web storage origin
+
+- **Microsoft Entra External ID**
+  - App registration `cartoonify-app` (SPA platform, PKCE, no client secret)
   - Redirect URI: `https://<storage>.z1.web.core.windows.net/callback.html`
-  - Managed by Terraform via the `azuread` provider pointed at the External tenant
+  - Associated with the sign-up/sign-in user flow via Graph API
 
 ---
 
 ## API Endpoints
 
-All endpoints require `Authorization: Bearer <access_token>` and return JSON.
+All endpoints require `Authorization: Bearer <id_token>` and return JSON.
 
-| Method | Path | Purpose | Input | Cosmos DB Operation |
-|---|---|---|---|---|
-| POST | `/api/notes` | Create a new note | JSON body (`title`, `note`) | `create_item` |
-| GET | `/api/notes` | List caller's notes | None (owner from JWT) | `query_items` |
-| GET | `/api/notes/{id}` | Get a single note | Path param (`id`) | `read_item` |
-| PUT | `/api/notes/{id}` | Update a note | Path param + JSON body | `replace_item` |
-| DELETE | `/api/notes/{id}` | Delete a note | Path param (`id`) | `delete_item` |
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/upload-url` | Get a Blob SAS URL for direct photo upload |
+| POST | `/api/generate` | Validate upload, check quota, enqueue job |
+| GET | `/api/result/{job_id}` | Poll job status and get SAS download URLs |
+| GET | `/api/history` | Newest 50 jobs for the authenticated user |
+| DELETE | `/api/history/{job_id}` | Delete job record and associated blobs |
 
-| Aspect | Behavior |
+### Cartoon Styles
+
+| Style key | Description |
 |---|---|
-| Authentication | Entra External ID JWT (Bearer token, RS256) |
-| Authorization | Owner scoped — callers can only access their own notes |
-| Content-Type | `application/json` |
-| Unauthenticated | HTTP 401 |
-| Not found / wrong owner | HTTP 404 |
+| `pixar_3d` | Pixar 3D animated portrait |
+| `simpsons` | The Simpsons flat cel-shaded |
+| `anime` | Japanese anime cel-shading |
+| `comic_book` | Marvel comic book illustration |
+| `watercolor` | Fine art watercolor portrait |
+| `pencil_sketch` | Graphite portrait sketch |
 
-### POST /api/notes
+### Job Status Flow
 
-**Request:**
-```bash
-curl -s -X POST https://<func-app>.azurewebsites.net/api/notes \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"title":"Test Note","note":"This is my note"}'
 ```
-
-**Response (201):**
-```json
-{
-  "id": "2f2d0c5a-9f5f-4d7d-9e2c-1c8a5b8e3c21",
-  "title": "Test Note",
-  "note": "This is my note"
-}
-```
-
-### GET /api/notes
-
-**Response (200):**
-```json
-{
-  "items": [
-    {
-      "id": "2f2d0c5a-9f5f-4d7d-9e2c-1c8a5b8e3c21",
-      "title": "Test Note",
-      "note": "This is my note",
-      "created_at": "2026-04-10T14:12:09.123456+00:00",
-      "updated_at": "2026-04-10T14:12:09.123456+00:00"
-    }
-  ]
-}
-```
-
-### GET /api/notes/{id}
-
-```bash
-curl -s https://<func-app>.azurewebsites.net/api/notes/<id> \
-  -H "Authorization: Bearer <access_token>"
-```
-
-### PUT /api/notes/{id}
-
-```bash
-curl -s -X PUT https://<func-app>.azurewebsites.net/api/notes/<id> \
-  -H "Authorization: Bearer <access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"title":"Updated Title","note":"Updated content"}'
-```
-
-### DELETE /api/notes/{id}
-
-```bash
-curl -s -X DELETE https://<func-app>.azurewebsites.net/api/notes/<id> \
-  -H "Authorization: Bearer <access_token>"
+submitted → processing → complete
+                      ↘ error
 ```
 
 ---
@@ -270,28 +220,33 @@ curl -s -X DELETE https://<func-app>.azurewebsites.net/api/notes/<id> \
 ## Project Structure
 
 ```
-azure-entra-app/
-├── 01-functions/
+azure-cartoonify/
+├── 01-backend/
+│   ├── cosmosdb.tf        Cosmos DB account, database, container, custom role
+│   ├── entra.tf           Entra app registration (SPA, PKCE, redirect URI)
+│   ├── main.tf            Providers, resource group, random suffix
+│   ├── openai.tf          (placeholder — Azure OpenAI not used)
+│   ├── outputs.tf         All outputs consumed by 02-functions and 03-webapp
+│   ├── servicebus.tf      Service Bus namespace and queue
+│   ├── storage.tf         Web + media storage accounts, CORS, lifecycle policy
+│   └── variables.tf       Location, Entra variables
+├── 02-functions/
 │   ├── code/
-│   │   ├── function_app.py    # 5 Azure Functions; JWT validated in validate_token()
-│   │   ├── requirements.txt   # azure-functions, azure-cosmos, PyJWT, cryptography, requests
-│   │   └── host.json          # Extension bundle v4
-│   ├── entra.tf               # azuread_application (SPA, PKCE, redirect URI)
-│   ├── cosmosdb.tf            # Cosmos DB account, database, container (/owner partition)
-│   ├── functions.tf           # Storage, service plan, Function App + Entra env vars
-│   ├── main.tf                # azurerm + azuread providers, resource group, random suffix
-│   ├── outputs.tf             # URLs, storage name, Entra client ID + authority
-│   ├── storage.tf             # Web hosting storage account (here so URL is known for Entra redirect URI)
-│   └── variables.tf           # location + Entra variables
-├── 02-webapp/
-│   ├── callback.html          # PKCE auth code exchange; stores tokens in sessionStorage
-│   ├── config.json            # Generated at deploy time — not committed
-│   ├── favicon.ico            # Site icon
-│   ├── index.html.tmpl        # SPA with auth gate, PKCE sign-in/out, JWT in all API calls
-│   ├── main.tf                # azurerm provider + web_storage_name variable
-│   └── storage.tf             # Blob uploads only (index.html, callback.html, config.json, favicon.ico)
-├── apply.sh                   # Full deployment orchestrator (4 phases)
-├── destroy.sh                 # Reverse teardown
-├── validate.sh                # Prints web app URL
-└── check_env.sh               # Validates tools, Entra env vars, and Azure auth
+│   │   ├── function_app.py   5 HTTP routes + Service Bus worker
+│   │   ├── requirements.txt
+│   │   └── host.json
+│   ├── functions.tf       Function App, RBAC assignments
+│   ├── main.tf            Providers, data sources
+│   ├── outputs.tf         function_app_url
+│   └── variables.tf       All inputs from 01-backend outputs
+├── 03-webapp/
+│   ├── callback.html      PKCE auth code exchange
+│   ├── favicon.ico
+│   ├── index.html.tmpl    SPA — upload, style picker, gallery, polling
+│   ├── main.tf
+│   └── storage.tf         Blob upload of SPA assets
+├── apply.sh               3-stage deploy orchestrator
+├── check_env.sh           Tool + env var validation
+├── destroy.sh             Reverse teardown
+└── validate.sh            Print API + web URLs
 ```

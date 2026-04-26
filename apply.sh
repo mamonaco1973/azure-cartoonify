@@ -4,7 +4,7 @@ set -euo pipefail
 ./check_env.sh
 
 
-# ── Phase 1: Core infrastructure (SB, Cosmos, Storage, OpenAI, Entra app) ────
+# ── Step 1: Core infrastructure (SB, Cosmos, Storage, Entra app) ─────────────
 
 echo "NOTE: Deploying backend infrastructure..."
 cd 01-backend
@@ -36,7 +36,7 @@ ENTRA_AUTHORITY=$(terraform output -raw entra_authority)
 cd ..
 
 
-# ── Phase 1.5: Associate app with Entra user flow via Graph API ───────────────
+# ── Step 2: Associate app with Entra user flow via Graph API ──────────────────
 
 echo "NOTE: Associating cartoonify-app with user flow '${ENTRA_USER_FLOW_NAME}'..."
 
@@ -90,7 +90,7 @@ else
 fi
 
 
-# ── Phase 2: Function App (compute + RBAC) ───────────────────────────────────
+# ── Step 3: Function App (compute + RBAC) ─────────────────────────────────────
 
 echo "NOTE: Deploying Function App..."
 cd 02-functions
@@ -117,7 +117,7 @@ terraform apply -auto-approve
 
 cd ..
 
-# ── Phase 2.5: Deploy function code ───────────────────────────────────────────
+# ── Step 4: Deploy function code ──────────────────────────────────────────────
 
 echo "NOTE: Packaging and deploying function code..."
 cd 02-functions/code
@@ -152,7 +152,7 @@ echo "NOTE: Function app: ${FUNC_APP_NAME}"
 echo "NOTE: API base:     ${API_BASE}"
 
 
-# ── Phase 3: Web app ─────────────────────────────────────────────────────────
+# ── Step 5: Web app ───────────────────────────────────────────────────────────
 
 echo "NOTE: Building web app config..."
 
