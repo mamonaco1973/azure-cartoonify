@@ -656,7 +656,7 @@ def cartoonify_worker(msg: func.ServiceBusMessage) -> None:
         if prompt_extra:
             prompt = f"{prompt}, {prompt_extra}"
 
-        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        openai_client = OpenAI(api_key=OPENAI_API_KEY, timeout=120.0)
 
         logging.info("Calling gpt-image-1 style=%s job=%s", style, job_id)
         image_response = openai_client.images.edit(
@@ -683,9 +683,4 @@ def cartoonify_worker(msg: func.ServiceBusMessage) -> None:
 
     except Exception as e:
         logging.exception("Worker: failed job=%s: %s", job_id, e)
-        try:
-            _mark("error", error_message=str(e)[:500])
-        except Exception:
-            logging.exception("Worker: failed to mark error for job=%s", job_id)
-        # Re-raise so Service Bus can retry / dead-letter on hard failures
-        raise
+        _mark("error", error_message=str(e)[:500])
