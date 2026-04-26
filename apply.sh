@@ -154,11 +154,25 @@ FUNC_APP_NAME=$(az functionapp list \
   --query "[?starts_with(name, 'cartoonify-func-')].name" \
   --output tsv)
 
-az functionapp deployment source config-zip \
-  --name "$FUNC_APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --src app.zip \
-  --build-remote true
+# SCM site can take a minute to initialize after Terraform creates the app.
+_DEPLOY_MAX=10
+_DEPLOY_DELAY=30
+for _attempt in $(seq 1 $_DEPLOY_MAX); do
+  if az functionapp deployment source config-zip \
+    --name "$FUNC_APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --src app.zip \
+    --build-remote true; then
+    break
+  fi
+  if [[ $_attempt -lt $_DEPLOY_MAX ]]; then
+    echo "NOTE: Deployment failed (attempt ${_attempt}/${_DEPLOY_MAX}). Retrying in ${_DEPLOY_DELAY}s..."
+    sleep $_DEPLOY_DELAY
+  else
+    echo "ERROR: Function code deployment failed after ${_DEPLOY_MAX} attempts."
+    exit 1
+  fi
+done
 
 cd ../..
 
