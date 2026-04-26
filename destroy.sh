@@ -3,10 +3,20 @@ set -euo pipefail
 
 ./check_env.sh
 
-# Read outputs before state is destroyed.
+# Read all 01-backend outputs before state is destroyed.
 cd 01-backend
-WEB_STORAGE_NAME=$(terraform output -raw web_storage_name 2>/dev/null || true)
-ENTRA_CLIENT_ID=$(terraform output -raw entra_client_id 2>/dev/null || true)
+WEB_STORAGE_NAME=$(terraform output -raw web_storage_name           2>/dev/null || true)
+ENTRA_CLIENT_ID=$(terraform output -raw entra_client_id             2>/dev/null || true)
+WEB_BASE_URL=$(terraform output -raw web_base_url                   2>/dev/null || true)
+MEDIA_STORAGE_NAME=$(terraform output -raw media_storage_name       2>/dev/null || true)
+MEDIA_STORAGE_KEY=$(terraform output -raw media_storage_key         2>/dev/null || true)
+MEDIA_BLOB_ENDPOINT=$(terraform output -raw media_blob_endpoint     2>/dev/null || true)
+COSMOS_ENDPOINT=$(terraform output -raw cosmos_endpoint             2>/dev/null || true)
+COSMOS_ACCOUNT_NAME=$(terraform output -raw cosmos_account_name     2>/dev/null || true)
+COSMOS_ROLE_DEF_ID=$(terraform output -raw cosmos_role_definition_id 2>/dev/null || true)
+SB_NAMESPACE_FQDN=$(terraform output -raw servicebus_namespace_fqdn 2>/dev/null || true)
+SB_QUEUE_NAME=$(terraform output -raw servicebus_queue_name         2>/dev/null || true)
+SB_QUEUE_ID=$(terraform output -raw servicebus_queue_id             2>/dev/null || true)
 cd ..
 
 # ── Destroy web app first (depends on web storage from 01-backend) ────────────
@@ -25,20 +35,20 @@ cd 02-functions
 terraform init -upgrade
 terraform destroy -auto-approve \
   -var="resource_group_name=cartoonify-rg" \
-  -var="servicebus_namespace_fqdn=placeholder" \
-  -var="servicebus_queue_name=placeholder" \
-  -var="servicebus_queue_id=placeholder" \
-  -var="cosmos_endpoint=placeholder" \
-  -var="cosmos_account_name=placeholder" \
-  -var="cosmos_role_definition_id=placeholder" \
-  -var="media_storage_name=placeholder" \
-  -var="media_storage_key=placeholder" \
-  -var="media_blob_endpoint=placeholder" \
-  -var="openai_api_key=placeholder" \
-  -var="entra_tenant_name=placeholder" \
-  -var="entra_tenant_id=placeholder" \
-  -var="entra_client_id=placeholder" \
-  -var="web_origin=placeholder"
+  -var="servicebus_namespace_fqdn=${SB_NAMESPACE_FQDN:-placeholder}" \
+  -var="servicebus_queue_name=${SB_QUEUE_NAME:-placeholder}" \
+  -var="servicebus_queue_id=${SB_QUEUE_ID:-placeholder}" \
+  -var="cosmos_endpoint=${COSMOS_ENDPOINT:-placeholder}" \
+  -var="cosmos_account_name=${COSMOS_ACCOUNT_NAME:-placeholder}" \
+  -var="cosmos_role_definition_id=${COSMOS_ROLE_DEF_ID:-placeholder}" \
+  -var="media_storage_name=${MEDIA_STORAGE_NAME:-placeholder}" \
+  -var="media_storage_key=${MEDIA_STORAGE_KEY:-placeholder}" \
+  -var="media_blob_endpoint=${MEDIA_BLOB_ENDPOINT:-placeholder}" \
+  -var="openai_api_key=${OPENAI_API_KEY:-placeholder}" \
+  -var="entra_tenant_name=${ENTRA_TENANT_NAME}" \
+  -var="entra_tenant_id=${ENTRA_TENANT_ID}" \
+  -var="entra_client_id=${ENTRA_CLIENT_ID:-placeholder}" \
+  -var="web_origin=${WEB_BASE_URL:-placeholder}"
 cd ..
 
 
