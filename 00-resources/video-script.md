@@ -3,18 +3,18 @@
 ---
 
 ## Introduction
-
+ 
 [ Opening Sequence ]
 
-"Do you need a secure authenticated serverless API on Azure?"
+“Do you want to build an AI-powered image pipeline on Azure?”
 
-[ Architecture diagram — walk through it left to right: browser, storage account, Function App, Cosmos DB ]
+[ Show Diagram ]
 
-"In this project we build a serverless notes API using an Azure Function App and Cosmos DB. The API is fully secured with an Entra ID Tenant.
+"In this project, we build a fully serverless pipeline that turns photos into cartoons using Azure and Open AI."
 
-[ Show Build Roll ]
+[ Build B Roll ]
 
-"Follow along and in minutes you'll have a working authenticated API running in Azure."
+Follow along and in minutes you’ll have a fully working AI pipeline running on Azure.
 
 ---
 
@@ -24,25 +24,49 @@
 
 "Let's walk through the architecture before we build."
 
-[ Highlight browser and storage account ]
+[ Diagram then Congito ]
 
-"The user opens a static web app from a storage account and signs in with Entra ID.
+"First, the user signs into the web application using an Entra ID external tenant.
 
-[ Entra ID then JWT ]
+[ Choose File then Diagam ]
 
-The Entra ID login returns a JWT and that token is sent with every API request.
+"When the user selects “Choose File”, the image is uploaded to a storage account."
 
-[ Function App ]
+[  Cartoonify ]
 
-"The function app itself validates the bearer token before the request is allowed."
+When the user selects “Cartoonify”, the API does two things:
 
-[ Show CosmosDB ]
+[ Highlight Cosmos DB]
 
-"The funcion app stores the notes in the Cosmos DB table."
+It creates a job record in Cosmos DB
 
-[ Owner Field ]
+[ Highlight SQS queue ]
 
-The owner field is scoped to the authenticated user.
+Then it sends a message to the image processing service bus.
+
+[ Highlight Lambda ]
+
+"The service bus triggers the worker function."
+
+[ Show bedrock ]
+
+"The worker function calls Open AI to generate the cartoon."
+
+[ Show Open AI page]
+
+"You'll need to provide an Open AI API key for the image generation processing".
+
+[ Show S3 Media Bucket]
+
+"The generated image is written back to the storage account."
+
+[ Final Dynamo DB State]
+
+When processing completes, the job status is updated in Cosmos DB.
+
+[ Show final result ]
+
+The web application refreshes and displays the generated image.
 
 ---
 
@@ -68,54 +92,61 @@ The owner field is scoped to the authenticated user.
 
 "API URL. Website URL. Done."
 
+Now re-run the check env script after setting the environment variables.
+
+Note the warning about the Open AI API key - This is necessary for the image generation and can be added later.
+
+If you need help setting up Azure and terraform check out our Azure Setup video.
+
+Once that's done run the apply script to start the build.
+
 ---
 
 ## Build Results
 
-[ Azure Portal — Resource Groups ]
+Three storage accounts are created for this project.
 
-"Two resource groups — one for the Function App and Cosmos DB, one for the web frontend."
+The first account hosts the public web application.
 
-[ Azure Portal — Function App, Flex Consumption plan visible ]
+The second account stores the uploaded source images and generated cartoons.
 
-"Function App on FC1. Python 3.11. Cosmos DB connection settings in app settings."
+The third account stores the azure functions.
 
-[ Azure Portal — Cosmos DB container ]
+Identity and access is handled by an Entra ID External tenant.
 
-"Cosmos DB with a notes container. Partition key is owner."
+The serverless API is implemented with an Azure Function App.
 
-[ Azure Portal — storage account, $web container ]
+The image generation pipeline is drived by an azure service bus queue.
 
-"Static website enabled. index.html in the $web container, ready to serve."
+Cosmos DB stores the status of each image generation job.
 
-[ Browser — Notes Demo loads ]
+When a message is processed, the worker function calls Open AI to generate the cartoon image.
 
-"Open the URL. The app is live."
+An API key must be specified to generate images.
+
+The generated image is written back to the media storage account.
+
+The Cosmos DB job record is updated to complete.
+
+When the application refreshes, the generated results are displayed.
+
 
 ---
 
 ## Demo
 
-Navigate to the URL to launch the notes application.
+Navigate to the web application URL.
 
-Sign in with an existing account or create a new one.
+Sign in using the external Entra ID tenant.
 
-We're now authenticated into the app.
+Select choose file and upload a test image.
 
-Open the browser debugger so we can watch the API calls.
+Select the Pixar 3D style, then click Cartoonify to start the image generation pipeline.
 
-Create a new note.
+The application displays the image generation life cycle in the left panel.
 
-The post call is made with the JWT as a bearer token.
+Now try some different styles.
 
-Now update the node.
-
-A put call is made with the bearer token.
-
-Delete the note.
-
-A delete call is made with the bearer token.
-
-In this demo we've exercised every API endpoint, all secured with JWT bearer tokens.
+The application displays a gallery of your previous results.
 
 ---
