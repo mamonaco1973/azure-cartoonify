@@ -34,25 +34,9 @@ Key capabilities demonstrated:
 
 ## Architecture
 
-```
-Browser → Blob Storage SPA → Entra External ID (PKCE) → sessionStorage (JWT)
+![diagram](azure-cartoonify.png)
 
-Browser → POST /api/upload-url → Function App (JWT) → Blob SAS URL
-Browser → PUT (direct) ──────→ Blob Storage (originals/<owner>/<job_id>.<ext>)
-
-Browser → POST /api/generate → Function App (JWT) → Cosmos DB (status=submitted)
-                                                  → Service Bus cartoonify-jobs
-                                                          ↓
-                               Service Bus trigger (cartoonify_worker)
-                               • Pillow: EXIF strip, 1024×1024 crop/resize
-                               • OpenAI gpt-image-1 images.edit
-                               • Blob upload (cartoons/<owner>/<job_id>.png)
-                               • Cosmos DB (status=complete)
-
-Browser → GET /api/result/{job_id} → SAS download URLs
-Browser → GET /api/history         → newest 50 jobs for owner
-Browser → DELETE /api/history/{id} → delete blobs + Cosmos row
-```
+![flow](cartoonify-flow.png)
 
 ---
 
