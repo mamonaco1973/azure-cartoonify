@@ -70,33 +70,50 @@ fi
 
 echo "NOTE: Validating Entra External ID credentials and user flow..."
 
-GRAPH_TOKEN=$(curl -s -X POST \
-  "https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/token" \
-  --data-urlencode "grant_type=client_credentials" \
-  --data-urlencode "client_id=${ENTRA_SP_CLIENT_ID}" \
-  --data-urlencode "client_secret=${ENTRA_SP_CLIENT_SECRET}" \
-  --data-urlencode "scope=https://graph.microsoft.com/.default" \
-  | jq -r '.access_token')
+# Acquire token and verify user flow — retried up to 10 times for throttling.
+_validate_entra() {
+  GRAPH_TOKEN=$(curl -s -X POST \
+    "https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/token" \
+    --data-urlencode "grant_type=client_credentials" \
+    --data-urlencode "client_id=${ENTRA_SP_CLIENT_ID}" \
+    --data-urlencode "client_secret=${ENTRA_SP_CLIENT_SECRET}" \
+    --data-urlencode "scope=https://graph.microsoft.com/.default" \
+    | jq -r '.access_token')
 
-if [[ -z "$GRAPH_TOKEN" || "$GRAPH_TOKEN" == "null" ]]; then
-  echo "ERROR: Failed to acquire Graph API token. Check ENTRA_SP_CLIENT_ID and ENTRA_SP_CLIENT_SECRET."
-  exit 1
-fi
+  if [[ -z "$GRAPH_TOKEN" || "$GRAPH_TOKEN" == "null" ]]; then
+    echo "WARNING: Failed to acquire Graph API token."
+    return 1
+  fi
 
-echo "NOTE: Entra service principal credentials are valid."
+  FLOW_ID=$(curl -s -G \
+    --data-urlencode "\$filter=displayName eq '${ENTRA_USER_FLOW_NAME}'" \
+    "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows" \
+    -H "Authorization: Bearer ${GRAPH_TOKEN}" \
+    | jq -r '.value[0].id')
 
-FLOW_ID=$(curl -s -G \
-  --data-urlencode "\$filter=displayName eq '${ENTRA_USER_FLOW_NAME}'" \
-  "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows" \
-  -H "Authorization: Bearer ${GRAPH_TOKEN}" \
-  | jq -r '.value[0].id')
+  if [[ -z "$FLOW_ID" || "$FLOW_ID" == "null" ]]; then
+    echo "WARNING: User flow '${ENTRA_USER_FLOW_NAME}' not found in tenant '${ENTRA_TENANT_NAME}'."
+    return 1
+  fi
 
-if [[ -z "$FLOW_ID" || "$FLOW_ID" == "null" ]]; then
-  echo "ERROR: User flow '${ENTRA_USER_FLOW_NAME}' not found in tenant '${ENTRA_TENANT_NAME}'. Check ENTRA_USER_FLOW_NAME."
-  exit 1
-fi
+  echo "NOTE: Entra service principal credentials are valid."
+  echo "NOTE: User flow '${ENTRA_USER_FLOW_NAME}' found (id: ${FLOW_ID})."
+}
 
-echo "NOTE: User flow '${ENTRA_USER_FLOW_NAME}' found (id: ${FLOW_ID})."
+_GRAPH_MAX=10
+_GRAPH_DELAY=30
+for _attempt in $(seq 1 $_GRAPH_MAX); do
+  if _validate_entra; then
+    break
+  fi
+  if [[ $_attempt -lt $_GRAPH_MAX ]]; then
+    echo "NOTE: Retrying in ${_GRAPH_DELAY}s (attempt ${_attempt}/${_GRAPH_MAX})..."
+    sleep $_GRAPH_DELAY
+  else
+    echo "ERROR: Entra validation failed after ${_GRAPH_MAX} attempts. Check ENTRA_SP_CLIENT_ID, ENTRA_SP_CLIENT_SECRET, and ENTRA_USER_FLOW_NAME."
+    exit 1
+  fi
+done
 
 # OPENAI_API_KEY is optional — worker raises at runtime if missing
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then

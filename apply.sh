@@ -42,39 +42,43 @@ echo "NOTE: Associating cartoonify-app with user flow '${ENTRA_USER_FLOW_NAME}'.
 
 # The ARM SP has no Graph permissions in the External tenant — acquire a
 # separate token using the Entra-scoped SP.
-GRAPH_TOKEN=$(curl -s -X POST \
-  "https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/token" \
-  --data-urlencode "grant_type=client_credentials" \
-  --data-urlencode "client_id=${ENTRA_SP_CLIENT_ID}" \
-  --data-urlencode "client_secret=${ENTRA_SP_CLIENT_SECRET}" \
-  --data-urlencode "scope=https://graph.microsoft.com/.default" \
-  | jq -r '.access_token')
+# Retried up to 10 times — Graph API throttles under rapid rebuilds.
+_associate_app() {
+  GRAPH_TOKEN=$(curl -s -X POST \
+    "https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/token" \
+    --data-urlencode "grant_type=client_credentials" \
+    --data-urlencode "client_id=${ENTRA_SP_CLIENT_ID}" \
+    --data-urlencode "client_secret=${ENTRA_SP_CLIENT_SECRET}" \
+    --data-urlencode "scope=https://graph.microsoft.com/.default" \
+    | jq -r '.access_token')
 
-if [[ -z "$GRAPH_TOKEN" || "$GRAPH_TOKEN" == "null" ]]; then
-  echo "ERROR: Failed to acquire Graph API token for user flow association."
-  exit 1
-fi
+  if [[ -z "$GRAPH_TOKEN" || "$GRAPH_TOKEN" == "null" ]]; then
+    echo "WARNING: Failed to acquire Graph API token."
+    return 1
+  fi
 
-FLOW_ID=$(curl -s -G \
-  --data-urlencode "\$filter=displayName eq '${ENTRA_USER_FLOW_NAME}'" \
-  "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows" \
-  -H "Authorization: Bearer ${GRAPH_TOKEN}" \
-  | jq -r '.value[0].id')
+  FLOW_ID=$(curl -s -G \
+    --data-urlencode "\$filter=displayName eq '${ENTRA_USER_FLOW_NAME}'" \
+    "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows" \
+    -H "Authorization: Bearer ${GRAPH_TOKEN}" \
+    | jq -r '.value[0].id')
 
-if [[ -z "$FLOW_ID" || "$FLOW_ID" == "null" ]]; then
-  echo "ERROR: User flow '${ENTRA_USER_FLOW_NAME}' not found in tenant."
-  exit 1
-fi
+  if [[ -z "$FLOW_ID" || "$FLOW_ID" == "null" ]]; then
+    echo "WARNING: User flow '${ENTRA_USER_FLOW_NAME}' not found in tenant."
+    return 1
+  fi
 
-# Skip if already linked — makes apply.sh idempotent.
-ALREADY_LINKED=$(curl -s \
-  "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows/${FLOW_ID}/conditions/applications/includeApplications" \
-  -H "Authorization: Bearer ${GRAPH_TOKEN}" \
-  | jq -r --arg id "${ENTRA_CLIENT_ID}" '.value[] | select(.appId == $id) | .appId')
+  # Skip if already linked — makes apply.sh idempotent.
+  ALREADY_LINKED=$(curl -s \
+    "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows/${FLOW_ID}/conditions/applications/includeApplications" \
+    -H "Authorization: Bearer ${GRAPH_TOKEN}" \
+    | jq -r --arg id "${ENTRA_CLIENT_ID}" '.value[] | select(.appId == $id) | .appId')
 
-if [[ -n "$ALREADY_LINKED" ]]; then
-  echo "NOTE: App already associated with user flow '${ENTRA_USER_FLOW_NAME}'."
-else
+  if [[ -n "$ALREADY_LINKED" ]]; then
+    echo "NOTE: App already associated with user flow '${ENTRA_USER_FLOW_NAME}'."
+    return 0
+  fi
+
   HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
     "https://graph.microsoft.com/v1.0/identity/authenticationEventsFlows/${FLOW_ID}/conditions/applications/includeApplications" \
     -H "Authorization: Bearer ${GRAPH_TOKEN}" \
@@ -83,11 +87,27 @@ else
 
   if [[ "$HTTP_STATUS" == "201" ]]; then
     echo "NOTE: App associated with user flow '${ENTRA_USER_FLOW_NAME}'."
+    return 0
+  fi
+
+  echo "WARNING: Failed to associate app with user flow (HTTP ${HTTP_STATUS})."
+  return 1
+}
+
+_GRAPH_MAX=10
+_GRAPH_DELAY=30
+for _attempt in $(seq 1 $_GRAPH_MAX); do
+  if _associate_app; then
+    break
+  fi
+  if [[ $_attempt -lt $_GRAPH_MAX ]]; then
+    echo "NOTE: Retrying in ${_GRAPH_DELAY}s (attempt ${_attempt}/${_GRAPH_MAX})..."
+    sleep $_GRAPH_DELAY
   else
-    echo "ERROR: Failed to associate app with user flow (HTTP ${HTTP_STATUS})."
+    echo "ERROR: Failed to associate app with user flow after ${_GRAPH_MAX} attempts."
     exit 1
   fi
-fi
+done
 
 
 # ── Step 3: Function App (compute + RBAC) ─────────────────────────────────────
