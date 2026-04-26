@@ -31,6 +31,7 @@ from azure.identity import DefaultAzureCredential
 from azure.storage.blob import (
     BlobSasPermissions,
     BlobServiceClient,
+    ContentSettings,
     generate_blob_sas,
 )
 from openai import OpenAI
@@ -674,7 +675,7 @@ def cartoonify_worker(msg: func.ServiceBusMessage) -> None:
         blob_service.get_blob_client("cartoons", cartoon_blob).upload_blob(
             cartoon_bytes,
             overwrite=True,
-            content_settings={"content_type": "image/png"},
+            content_settings=ContentSettings(content_type="image/png"),
         )
 
         # 5. Mark complete
