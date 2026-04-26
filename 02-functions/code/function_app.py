@@ -611,7 +611,7 @@ def cartoonify_worker(msg: func.ServiceBusMessage) -> None:
             item=job_id,
             partition_key=owner,
             patch_operations=[
-                {"op": "replace", "path": f"/{k}", "value": v}
+                {"op": "set", "path": f"/{k}", "value": v}
                 for k, v in patch.items()
             ],
         )
